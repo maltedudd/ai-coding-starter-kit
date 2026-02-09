@@ -129,6 +129,105 @@ Email + Passwort Authentication via Supabase Auth mit Email-Verifizierung. User 
 - Password Strength Indicator
 - "Remember Me" Checkbox (Session-Länge anpassen)
 
+## Tech-Design (Solution Architect)
+
+### Component-Struktur
+
+```
+App
+├── Login-Seite (/login)
+│   ├── Login-Formular
+│   │   ├── Email-Eingabefeld
+│   │   ├── Passwort-Eingabefeld
+│   │   └── "Einloggen" Button
+│   └── Link zu Registrierung
+│
+├── Registrierungs-Seite (/register)
+│   ├── Register-Formular
+│   │   ├── Email-Eingabefeld
+│   │   ├── Passwort-Eingabefeld
+│   │   └── "Registrieren" Button
+│   └── Link zu Login
+│
+├── Email-Verifizierungs-Seite (/auth/verify)
+│   ├── Success-Nachricht (nach erfolgreicher Verifizierung)
+│   └── Error-Nachricht (bei abgelaufenem Link)
+│
+└── Geschützte Bereiche (Dashboard, Settings, etc.)
+    ├── Navigation mit Logout-Button
+    └── Automatischer Redirect zu Login wenn nicht eingeloggt
+```
+
+### Daten-Model
+
+**User-Account (verwaltet von Supabase Auth):**
+- Email-Adresse (eindeutig)
+- Passwort (verschlüsselt von Supabase)
+- Email-Verifizierungs-Status (bestätigt oder nicht)
+- Session-Token (für automatisches Eingeloggt-bleiben)
+- Login-Zeitstempel
+
+**Gespeichert in:** Supabase Auth (keine eigene Datenbank-Tabelle nötig)
+
+**Session-Verwaltung:**
+- Session bleibt 7 Tage aktiv (Standard)
+- Bei Browser-Reload automatisch wiederhergestellt
+- Session wird im sicheren Cookie gespeichert
+
+### Tech-Entscheidungen
+
+**Warum Supabase Auth?**
+- Fertige Lösung (keine eigene Auth-Logik nötig)
+- Email-Verifizierung bereits integriert
+- Automatisches Passwort-Hashing (sichere Speicherung)
+- Session-Management inklusive
+- Rate Limiting gegen Brute-Force bereits aktiv
+
+**Warum Email + Passwort (keine Social Logins)?**
+- Einfacher für MVP
+- Keine komplizierte OAuth-Integration nötig
+- Datenschutz-freundlich (keine Daten an Drittanbieter)
+
+**Warum Email-Verifizierung Pflicht?**
+- Verhindert Spam-Accounts
+- Stellt sicher, dass Newsletter-Empfänger-Email gültig ist
+- Supabase sendet automatisch Bestätigungs-Emails
+
+**Warum 7-Tage Session?**
+- User müssen nicht ständig neu einloggen
+- Guter Balance zwischen Komfort und Sicherheit
+- Supabase Standard-Einstellung
+
+### Dependencies
+
+**Benötigte Packages:**
+- `@supabase/supabase-js` (Supabase Client für Browser)
+- `@supabase/auth-helpers-nextjs` (Integration mit Next.js)
+- Bereits installierte shadcn/ui Components: `form`, `input`, `button`, `label`, `alert`
+
+**Keine zusätzlichen Packages:**
+- Kein bcrypt (Supabase handled Passwort-Hashing)
+- Kein JWT-Library (Supabase managed Sessions)
+- Kein Email-Service (Supabase sendet Verifizierungs-Emails)
+
+### Seiten-Struktur
+
+**Öffentliche Seiten (nicht eingeloggt):**
+- `/login` - Login-Formular
+- `/register` - Registrierungs-Formular
+- `/auth/verify` - Email-Bestätigungs-Callback
+
+**Geschützte Seiten (nur eingeloggt):**
+- `/dashboard` - Hauptseite (Podcast-Liste)
+- `/settings` - Einstellungen
+- Alle anderen Feature-Seiten
+
+**Automatische Redirects:**
+- Nicht eingeloggte User → werden zu `/login` weitergeleitet
+- Eingeloggte User auf `/login` → werden zu `/dashboard` weitergeleitet
+- Nach erfolgreicher Registration → Hinweis-Seite "Prüfe deine Emails"
+- Nach Email-Verifizierung → zu `/login` mit Success-Message
+
 ## Notizen für Entwickler
 - Nutze Supabase Auth Helpers für Next.js (für Server-Side Auth)
 - Session State in Context/Provider speichern (für Client-Side)

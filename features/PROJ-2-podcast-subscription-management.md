@@ -176,6 +176,122 @@ CREATE POLICY "Users can delete own subscriptions"
 - Bulk-Import von OPML-Dateien
 - Podcast-Abo Pausieren (statt Löschen)
 
+## Tech-Design (Solution Architect)
+
+### Component-Struktur
+
+```
+Dashboard (/dashboard)
+├── Kopfzeile
+│   ├── App-Logo
+│   └── Navigation (Logout-Button)
+│
+├── "Neuen Podcast hinzufügen" Bereich
+│   ├── RSS-Feed URL Eingabefeld
+│   ├── "Feed prüfen" Button
+│   └── Podcast-Preview (erscheint nach Validation)
+│       ├── Podcast-Cover (Bild)
+│       ├── Podcast-Titel
+│       ├── Beschreibung (erste 200 Zeichen)
+│       └── Buttons: "Abonnieren" + "Abbrechen"
+│
+└── Meine Podcasts (Liste)
+    ├── Leerer Zustand (wenn keine Abos)
+    │   └── Nachricht: "Noch keine Podcasts abonniert"
+    │
+    └── Podcast-Karten (für jeden abonnierten Podcast)
+        ├── Cover-Bild (klein, 80x80px)
+        ├── Titel (fett)
+        ├── Beschreibung (max. 100 Zeichen)
+        └── "Entfernen" Button (Trash-Icon)
+
+Bestätigungs-Dialog (beim Entfernen)
+├── Titel: "Podcast entfernen?"
+├── Text: "Möchtest du '[Podcast-Name]' wirklich entfernen?"
+└── Buttons: "Ja, entfernen" (rot) + "Abbrechen"
+```
+
+### Daten-Model
+
+**Podcast-Abonnement hat:**
+- RSS-Feed URL (die URL zum XML-Feed)
+- Podcast-Titel (aus Feed extrahiert)
+- Beschreibung (aus Feed extrahiert)
+- Cover-Bild URL (aus Feed extrahiert, oder Default-Bild)
+- Hinzufüge-Datum (wann User abonniert hat)
+- Zugehörigkeit zu User (jeder User hat eigene Abos)
+
+**Gespeichert in:** Supabase Datenbank (Tabelle: `podcast_subscriptions`)
+
+**Wichtige Regel:** Gleiche RSS-URL kann NICHT zweimal vom selben User abonniert werden (Duplikat-Schutz)
+
+### Tech-Entscheidungen
+
+**Warum RSS-Feed URL statt Podcast-Suche?**
+- Einfacher für MVP (keine Integration mit iTunes/Spotify API nötig)
+- User haben meist die RSS-URL ihrer Lieblings-Podcasts
+- Flexibler: Funktioniert mit jedem Podcast (auch kleine/private)
+
+**Warum rss-parser Library?**
+- Bewährt und zuverlässig (200k+ Downloads/Woche)
+- Parst alle gängigen Podcast-Formate (iTunes-Tags inklusive)
+- Einfache API (kein komplexes XML-Parsing nötig)
+
+**Warum Validation im Backend?**
+- Sicherer: User kann keine gefährlichen URLs einschleusen
+- Server kann Redirects folgen (CORS-Probleme vermeiden)
+- Timeout-Control (Feed-Abruf max. 10 Sekunden)
+
+**Warum Bestätigungs-Dialog beim Löschen?**
+- Verhindert versehentliches Entfernen
+- User verliert sonst alle Episoden-Historie
+- Best Practice für destruktive Aktionen
+
+**Warum Default Cover-Bild?**
+- Nicht alle Podcasts haben Cover im Feed
+- Verhindert "kaputte" Bilder in der UI
+- Einheitliches Design
+
+### Dependencies
+
+**Benötigte Packages:**
+- `rss-parser` (RSS-Feed Parsing)
+- Bereits installierte shadcn/ui Components: `input`, `button`, `card`, `dialog`, `alert`
+
+**Backend-Logik:**
+- API Route zum Feed-Validieren (prüft URL, holt Metadaten)
+- Supabase Client für Datenbank-Zugriff (Abos speichern/löschen)
+
+### Workflow für User
+
+**Podcast hinzufügen:**
+1. User gibt RSS-URL ein → klickt "Feed prüfen"
+2. Backend lädt Feed, extrahiert Titel/Cover/Beschreibung
+3. Preview wird angezeigt
+4. User klickt "Abonnieren" → Podcast wird gespeichert
+5. Success-Nachricht + Podcast erscheint in Liste
+
+**Podcast entfernen:**
+1. User klickt Trash-Icon bei Podcast
+2. Bestätigungs-Dialog öffnet sich
+3. User bestätigt → Podcast wird gelöscht
+4. Success-Nachricht + Podcast verschwindet
+
+**Error-Handling:**
+- Ungültige URL → "Bitte gib eine gültige URL ein"
+- Feed nicht erreichbar → "Feed konnte nicht geladen werden"
+- Kein RSS-Feed → "Das ist kein gültiger Podcast-Feed"
+- Bereits abonniert → "Dieser Podcast ist bereits abonniert"
+
+### Backend-API
+
+**Endpoints (in Next.js API Routes):**
+- `POST /api/podcasts/validate` - RSS-Feed prüfen und Metadaten holen
+- `POST /api/podcasts/subscribe` - Podcast-Abo erstellen
+- `DELETE /api/podcasts/[id]` - Podcast-Abo löschen
+
+**Alternativ:** Direkter Supabase-Zugriff für Subscribe/Delete (nur Validate-Endpoint im Backend)
+
 ## Notizen für Entwickler
 - Nutze `rss-parser` für RSS-Parsing (bewährte Library)
 - RSS-Feed Validation sollte Backend-seitig laufen (nicht im Client)

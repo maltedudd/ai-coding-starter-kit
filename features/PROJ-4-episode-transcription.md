@@ -222,6 +222,144 @@ Dein Podletter-Team
 - Dashboard für User: Transkriptions-Status anzeigen
 - Whisper Alternative (z.B. AssemblyAI) als Fallback
 
+## Tech-Design (Solution Architect)
+
+### System-Komponenten
+
+```
+Transcription Worker (läuft kontinuierlich)
+├── Timer (alle 10 Minuten oder kontinuierlich)
+│
+├── Transcription-Pipeline
+│   ├── Hole Episodes mit Status "pending_transcription"
+│   ├── Für jede Episode (max. 5 parallel):
+│   │   ├── Lade Audio-Datei herunter (MP3/M4A)
+│   │   ├── Prüfe Datei-Größe (max. 500 MB)
+│   │   ├── Sende an OpenAI Whisper (Speech-to-Text)
+│   │   ├── Erhalte Transkript als Text
+│   │   ├── Speichere Transkript in Datenbank
+│   │   └── Lösche temporäre Audio-Datei
+│   └── Aktualisiere Status ("transcribing" → "transcribed")
+│
+└── Error-Handler
+    ├── Bei permanenten Fehlern → Status "failed"
+    ├── Bei temporären Fehlern → erneut versuchen
+    └── User-Email bei permanenten Fehlern
+```
+
+**Keine User-sichtbare UI** - Läuft komplett im Hintergrund!
+
+### Daten-Model
+
+**Episode bekommt zusätzlich:**
+- Transkript-Text (der vollständige gesprochene Inhalt)
+- Fehler-Nachricht (falls Transkription fehlschlägt)
+
+**Status-Werte:**
+- "pending_transcription" → wartet auf Verarbeitung
+- "transcribing" → wird gerade verarbeitet
+- "transcribed" → fertig, bereit für Newsletter
+- "failed" → fehlgeschlagen, User wird benachrichtigt
+
+**Gespeichert in:** Supabase Datenbank (erweitert die `episodes` Tabelle)
+
+### Tech-Entscheidungen
+
+**Warum OpenAI Whisper?**
+- Beste Speech-to-Text Qualität auf dem Markt
+- Erkennt Sprache automatisch (Deutsch, Englisch, etc.)
+- Handled Hintergrundgeräusche gut
+- Einfache API (Audio hochladen → Transkript zurück)
+
+**Warum Worker-Prozess?**
+- Transkription dauert lange (~30 Min für 30-Min-Podcast)
+- Kann nicht in normalem Web-Request laufen (Timeout)
+- Muss im Hintergrund arbeiten
+
+**Warum max. 5 parallele Transkriptionen?**
+- OpenAI hat Rate Limits (50 Requests/Minute)
+- Zu viele gleichzeitig = Quota-Fehler
+- 5 ist sicherer Wert mit Puffer
+
+**Warum 500 MB Limit?**
+- Whisper API akzeptiert max. 25 MB
+- Sehr große Dateien müssten komprimiert werden (kompliziert)
+- 500 MB = ca. 8-10 Stunden Podcast (extrem lang)
+- Für MVP: Lehne zu große Dateien ab
+
+**Warum temporäre Speicherung?**
+- Audio muss erst heruntergeladen werden (von Podcast-Server)
+- Whisper braucht Datei-Upload (nicht nur URL)
+- Nach Transkription nicht mehr benötigt → löschen
+
+**Warum kontinuierlicher Worker (nicht Cronjob)?**
+- Cronjobs haben Zeitlimit (10 Min Vercel Free, 60 Min Pro)
+- Transkription kann länger dauern
+- Separater Worker-Service kann unbegrenzt laufen
+
+### Dependencies
+
+**Benötigte Packages:**
+- `openai` (offizielles OpenAI SDK für Node.js)
+- Keine Audio-Processing-Libraries nötig (Whisper akzeptiert viele Formate direkt)
+
+**Infrastruktur:**
+- Worker-Service (Railway, Render, Fly.io - kostenpflichtig aber günstig)
+- ODER: Vercel Serverless Function (wenn Podcasts kurz genug sind)
+
+### System-Workflow
+
+**Kontinuierlich läuft:**
+
+1. **Worker prüft Datenbank** (alle 10 Sekunden)
+   - Gibt es Episodes mit Status "pending_transcription"?
+
+2. **Für jede gefundene Episode:**
+   - Setze Status → "transcribing" (verhindert doppelte Verarbeitung)
+   - Lade Audio von URL herunter
+   - Prüfe Dateigröße (> 500 MB? → Fehler)
+   - Speichere temporär (z.B. `/tmp/episode-123.mp3`)
+
+3. **Sende an Whisper:**
+   - Upload Audio-Datei zu OpenAI
+   - Warte auf Transkript (dauert ~Audio-Länge)
+   - Erhalte Text zurück
+
+4. **Speichere Transkript:**
+   - Schreibe Text in Datenbank
+   - Setze Status → "transcribed"
+   - Lösche temporäre Datei
+
+5. **Bei Fehler:**
+   - Audio nicht erreichbar / zu groß / falsches Format → Status "failed"
+   - Whisper-Fehler (Rate Limit) → Status bleibt "pending_transcription", später retry
+   - Permanente Fehler → User-Email
+
+**User merkt nichts** - läuft im Hintergrund!
+
+### Kosten & Performance
+
+**OpenAI Whisper Kosten:**
+- $0.006 pro Audio-Minute
+- 30-Min-Podcast = ca. $0.18
+- 100 Podcasts/Monat = ~$18
+
+**Geschwindigkeit:**
+- Transkription dauert ca. 1x Audio-Länge
+- 30-Min-Podcast = ~30 Min Verarbeitung
+- Parallel (5 gleichzeitig) = schneller für viele Episodes
+
+**Rate Limits:**
+- Max. 50 Requests/Minute (OpenAI Standard)
+- Worker hält sich an Limit (max. 5 parallel)
+
+### User-Benachrichtigung
+
+**Email bei Fehler (permanent):**
+- Betreff: "Episode konnte nicht transkribiert werden"
+- Inhalt: Welche Episode, welcher Fehler (z.B. "zu groß", "nicht erreichbar")
+- User kann dann Podcast-Feed prüfen
+
 ## Notizen für Entwickler
 - Whisper API ist sehr zuverlässig, aber langsam (1x Audio-Länge)
 - Temporäre Files müssen unbedingt gelöscht werden (sonst füllt sich Disk)

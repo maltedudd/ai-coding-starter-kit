@@ -246,6 +246,199 @@ async function sendNewsletterEmail(userEmail: string, newsletters: Newsletter[])
 - Email-Vorschau im Dashboard (User sieht Preview vor Versand)
 - A/B Testing für Email-Templates
 
+## Tech-Design (Solution Architect)
+
+### System-Komponenten
+
+```
+Email-Versand Cronjob (stündlich)
+├── Timer (jede Stunde)
+│
+├── Delivery-Manager
+│   ├── Prüfe aktuelle Stunde (z.B. 8:00 UTC)
+│   ├── Finde alle User mit Versandzeit = 8:00
+│   ├── Für jeden User:
+│   │   ├── Hole neue Newsletter (Status "newsletter_ready")
+│   │   ├── Falls keine → Skip (keine Email)
+│   │   ├── Falls vorhanden:
+│   │   │   ├── Erstelle HTML-Email (mit allen Newslettern)
+│   │   │   ├── Sende via Email-Service (Resend)
+│   │   │   └── Markiere als versendet
+│   │   └── Aktualisiere Status ("newsletter_sent")
+│   └── Logge Erfolge und Fehler
+│
+└── Email-Template Generator
+    ├── Erstelle HTML (schönes Design)
+    └── Erstelle Plain Text (Fallback)
+```
+
+**Keine User-sichtbare UI** - User erhalten fertige Email!
+
+### Daten-Model
+
+**User-Einstellung hat:**
+- Newsletter-Email-Adresse
+- Versandzeit (Stunde 0-23 in UTC)
+
+**Episode bekommt zusätzlich:**
+- "newsletter_sent" Status
+- Versand-Zeitstempel (wann Email verschickt wurde)
+
+**Gespeichert in:** Supabase Datenbank
+
+### Tech-Entscheidungen
+
+**Warum stündlicher Cronjob?**
+- User wählen Versandzeit in vollen Stunden (8:00, 9:00, ...)
+- Jede Stunde prüfen wir, wer jetzt seine Newsletter bekommen soll
+- Einfacher als minutengenaue Planung
+
+**Warum nur EINE Email pro Tag?**
+- Verhindert Spam (User bekommen nicht 10 separate Emails)
+- "Daily Digest" = alle neuen Newsletter in einer Email
+- Lesefreundlicher für User
+
+**Warum Resend als Email-Service?**
+- Modern und developer-friendly (einfache API)
+- Günstig (100 Emails/Tag gratis, dann $20/Monat)
+- Automatisches SPF/DKIM/DMARC Setup (Emails landen nicht im Spam)
+- Sehr zuverlässig (hohe Zustellrate)
+
+**Warum HTML + Plain Text?**
+- HTML = schönes Design (Bilder, Farben, Layout)
+- Plain Text = Fallback für alte Email-Clients
+- Beide Versionen nötig für beste Kompatibilität
+
+**Warum Batch-Verarbeitung?**
+- Email-Services haben Rate Limits (z.B. 10 Emails/Sekunde)
+- Max. 100 User pro Cronjob-Run verhindert Quota-Fehler
+- Rest wird nächste Stunde versendet (1h Verzögerung akzeptabel)
+
+**Warum UTC-Speicherung?**
+- Server läuft auf UTC
+- Frontend konvertiert User-Eingabe (z.B. "8:00 Berlin") zu UTC
+- Verhindert Timezone-Chaos
+
+### Dependencies
+
+**Benötigte Packages:**
+- `resend` (Email-Service SDK)
+- Keine Template-Engine nötig (HTML-Strings reichen für MVP)
+
+**Infrastruktur:**
+- Vercel Cron Jobs (stündlich)
+- Resend-Account (Email-Service)
+
+### System-Workflow
+
+**Jede Stunde (z.B. um 8:00 UTC):**
+
+1. **Cronjob startet**
+   - Aktuelle Stunde: 8
+
+2. **Finde User mit Versandzeit = 8:**
+   - Query: "Alle User wo `newsletter_delivery_hour = 8`"
+
+3. **Für jeden gefundenen User:**
+   - Hole alle neuen Newsletter (Status "newsletter_ready" für seine Podcasts)
+   - Falls keine → Skip (keine Email)
+   - Falls Newsletter vorhanden:
+     - Erstelle Email-HTML (schönes Design mit allen Newslettern)
+     - Erstelle Plain Text Version
+     - Sende via Resend an User-Email
+     - Markiere alle enthaltenen Episodes als "newsletter_sent"
+
+4. **Cronjob endet**
+
+**User erhält schöne HTML-Email mit allen Highlights!**
+
+### Email-Design
+
+**Struktur einer Email:**
+
+```
+Betreff: "Deine neuen Podcast-Updates"
+
+---
+
+Hallo [User-Name],
+
+hier sind deine neuen Podcast-Highlights:
+
+┌─────────────────────────────────┐
+│ Tech Talk Daily - KI in Medizin │
+│                                 │
+│ Intro: Diese Episode...         │
+│                                 │
+│ Inhalte:                        │
+│ • KI-Diagnose verbessert...     │
+│ • Datenschutz-Bedenken...       │
+│                                 │
+│ Key Takeaways:                  │
+│ • KI ersetzt keine Ärzte        │
+│                                 │
+│ [→ Höre die Episode] (Button)   │
+└─────────────────────────────────┘
+
+┌─────────────────────────────────┐
+│ Startup Stories - Fundraising   │
+│ ...                             │
+└─────────────────────────────────┘
+
+---
+
+Einstellungen ändern (Link)
+```
+
+**Design-Prinzipien:**
+- Klar und übersichtlich
+- Mobile-freundlich (responsives Design)
+- Schnell überflybar (User lesen oft auf Handy)
+- Call-to-Action Buttons (zu Original-Episoden)
+
+### Kosten & Performance
+
+**Resend Kosten:**
+- Gratis: 100 Emails/Tag
+- Bezahlt: $20/Monat für 50.000 Emails
+- Bei 100 aktiven Usern = ~100 Emails/Tag (innerhalb Gratis-Tier)
+
+**Geschwindigkeit:**
+- Email-Versand: ~1-2 Sekunden pro Email
+- 100 User = ~2-3 Minuten Versand-Dauer
+
+**Rate Limits:**
+- Resend: 10 Requests/Sekunde
+- Batch-Verarbeitung verhindert Überschreitung
+
+### Backend-API
+
+**Endpoint:**
+- `GET /api/cron/send-newsletters` (von Vercel Cron ausgelöst)
+
+**Sicherheit:**
+- Nur von Vercel Cron aufrufbar (Secret-Header)
+
+### Vercel Cron Konfiguration
+
+**In `vercel.json`:**
+```
+Zeitplan: Jede Stunde (00:00, 01:00, 02:00, ...)
+Endpoint: /api/cron/send-newsletters
+```
+
+### User-Experience
+
+**User merkt:**
+- Täglich zur gewählten Zeit landet Email im Posteingang
+- Nur wenn es neue Episoden gibt (sonst keine Email)
+- Alle neuen Highlights in EINER Email (kein Spam)
+
+**User kann:**
+- Versandzeit in Settings ändern
+- Email-Adresse in Settings ändern
+- In Email auf "Einstellungen ändern" klicken → zu Settings-Page
+
 ## Notizen für Entwickler
 - Resend ist sehr developer-friendly (einfaches API, gutes DX)
 - HTML-Email-Templates müssen responsive sein (viele User lesen auf Mobile)

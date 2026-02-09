@@ -201,6 +201,182 @@ async function saveSettings(newsletterEmail: string, deliveryHour: number) {
 - Multiple Newsletter-Emails (z.B. Work + Personal)
 - Timezone-Auswahl (falls User in anderer Zone ist als Browser)
 
+## Tech-Design (Solution Architect)
+
+### Component-Struktur
+
+```
+Settings-Seite (/settings)
+├── Kopfzeile
+│   ├── Titel: "Einstellungen"
+│   └── Navigation (zurück zum Dashboard)
+│
+├── Einstellungs-Formular
+│   ├── Newsletter-Email Bereich
+│   │   ├── Label: "Newsletter-Email-Adresse"
+│   │   ├── Input-Feld (vorausgefüllt mit Login-Email)
+│   │   └── Hinweis: "An diese Adresse werden Newsletter verschickt"
+│   │
+│   ├── Versandzeit Bereich
+│   │   ├── Label: "Tägliche Versandzeit"
+│   │   ├── Dropdown/Time-Picker (0:00 - 23:00)
+│   │   ├── Default: 8:00 Uhr
+│   │   └── Hinweis: "In deiner lokalen Zeitzone"
+│   │
+│   └── Speichern Button
+│       └── "Einstellungen speichern"
+│
+└── Success/Error Nachricht
+    ├── Success: "Einstellungen gespeichert"
+    └── Error: "Ungültige Email-Adresse"
+```
+
+### Daten-Model
+
+**User-Einstellungen haben:**
+- Newsletter-Email-Adresse (kann anders sein als Login-Email)
+- Versandzeit (Stunde 0-23, gespeichert in UTC)
+- Erstellungs-Datum
+- Letztes Update-Datum
+
+**Gespeichert in:** Supabase Datenbank (Tabelle: `user_settings`)
+
+**Default-Werte (wenn User noch nichts gespeichert hat):**
+- Email = Login-Email
+- Versandzeit = 8:00 Uhr (morgens)
+
+### Tech-Entscheidungen
+
+**Warum separate Newsletter-Email?**
+- User möchten vielleicht andere Email für Newsletter (z.B. Work vs. Personal)
+- Flexibilität für User
+- Default ist Login-Email (einfacher für die meisten)
+
+**Warum nur volle Stunden (0-23)?**
+- Einfacher für MVP (keine Minuten-Auswahl)
+- Cronjob läuft sowieso nur stündlich
+- Ausreichend für User-Bedürfnisse
+
+**Warum Timezone-Conversion?**
+- User denkt in lokaler Zeit ("8:00 Uhr morgens")
+- Server arbeitet in UTC (verhindert Timezone-Chaos)
+- Frontend konvertiert automatisch (User merkt nichts)
+
+**Warum Settings-Seite statt Dashboard-Integration?**
+- Dedizierte Seite = übersichtlicher
+- Settings werden selten geändert (nicht im Weg)
+- Kann später erweitert werden (mehr Settings)
+
+**Warum UPSERT statt INSERT?**
+- User kann Settings mehrfach speichern (Update statt Fehler)
+- Einfacher für User (kein "Settings existieren bereits" Fehler)
+
+**Warum nach Registration zu Settings?**
+- User muss Email + Versandzeit konfigurieren
+- Sonst keine Newsletter (User wundert sich)
+- Einmal-Setup am Anfang
+
+### Dependencies
+
+**Benötigte Packages:**
+- `date-fns` oder `date-fns-tz` (Timezone-Conversion)
+- Bereits installierte shadcn/ui Components: `form`, `input`, `select`, `button`, `label`, `alert`
+
+**Backend-Logik:**
+- Supabase Client (direkter Zugriff, kein API Route nötig)
+- UPSERT-Operation (Update oder Insert)
+
+### System-Workflow
+
+**Erster Besuch (nach Registration):**
+1. User wird zu `/settings` weitergeleitet
+2. Formular zeigt Default-Werte:
+   - Email = Login-Email (vorausgefüllt)
+   - Versandzeit = 8:00 Uhr
+3. User kann ändern oder direkt speichern
+4. Nach Speichern → Redirect zu Dashboard
+
+**Spätere Besuche:**
+1. User klickt "Einstellungen" in Navigation
+2. Formular zeigt gespeicherte Werte
+3. User ändert Werte
+4. Klick auf "Speichern" → Success-Message
+
+**Validation:**
+- Email: Standard-Email-Format (z.B. "test@example.com")
+- Versandzeit: Muss 0-23 sein
+- Beide Felder sind Pflicht
+
+**Speichern:**
+- Frontend konvertiert lokale Zeit → UTC
+- Speichert in Supabase via UPSERT
+- Success-Message wird angezeigt
+
+### Timezone-Handling
+
+**Beispiel: User in Berlin (UTC+1)**
+
+1. **User wählt:** "8:00 Uhr" (in Berlin)
+2. **Frontend konvertiert:** 8:00 Berlin → 7:00 UTC
+3. **Speichert in DB:** 7 (als Stunde in UTC)
+4. **Beim Laden:**
+   - DB hat: 7 (UTC)
+   - Frontend konvertiert: 7 UTC → 8:00 Berlin
+   - User sieht: "8:00 Uhr"
+
+**Wichtig:** User sieht IMMER seine lokale Zeit!
+
+### Frontend-Komponenten
+
+**Main Components:**
+- `SettingsPage` - Haupt-Seite (Layout)
+- `SettingsForm` - Formular mit Inputs
+- `TimePicker` - Dropdown für Stunden-Auswahl
+- `EmailInput` - Email-Eingabefeld mit Validation
+
+**shadcn/ui Components:**
+- `form` - Formular-Wrapper
+- `input` - Email-Feld
+- `select` - Stunden-Dropdown
+- `button` - Speichern-Button
+- `alert` - Success/Error Messages
+- `label` - Beschriftungen
+
+### User-Experience
+
+**User merkt:**
+- Einfaches Formular (nur 2 Felder)
+- Schnelles Speichern (< 500ms)
+- Klare Success-Message
+- Zeiten in seiner lokalen Zeitzone
+
+**User kann:**
+- Email jederzeit ändern
+- Versandzeit jederzeit ändern
+- Mehrfach speichern (kein Fehler)
+
+### Onboarding-Flow
+
+**Nach Registration:**
+1. Success-Message: "Account erstellt! Bitte konfiguriere deine Newsletter-Einstellungen"
+2. Redirect zu `/settings`
+3. User gibt Email + Versandzeit ein
+4. Speichert → Redirect zu `/dashboard`
+5. Hinweis: "Jetzt kannst du Podcasts abonnieren!"
+
+**Optional:** User kann Settings überspringen (dann Default-Werte)
+
+### Backend-Speicherung
+
+**Direkt über Supabase Client:**
+- Kein API Route nötig (Frontend → Supabase)
+- UPSERT-Query (user_id als Unique Key)
+- RLS Policy: User kann nur eigene Settings sehen/ändern
+
+**Sicherheit:**
+- Supabase RLS verhindert Zugriff auf fremde Settings
+- Email-Validation im Frontend UND Datenbank
+
 ## Notizen für Entwickler
 - UPSERT statt INSERT (User kann Settings mehrfach speichern)
 - Default-Werte: Newsletter-Email = Login-Email, Delivery-Hour = 8

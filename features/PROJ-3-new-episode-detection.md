@@ -196,6 +196,144 @@ CREATE INDEX idx_feed_check_logs_subscription ON feed_check_logs(subscription_id
 - Custom Check-Intervalle pro Podcast (täglich, 6h, 12h)
 - Health-Check Dashboard für Admins (alle Feeds, Success-Rate)
 
+## Tech-Design (Solution Architect)
+
+### System-Komponenten
+
+```
+Automatisierter Cronjob (stündlich)
+├── Timer (jede Stunde ausgelöst)
+│
+├── Feed-Checker (Hauptlogik)
+│   ├── Hole alle Podcast-Abos aus Datenbank
+│   ├── Für jeden Podcast:
+│   │   ├── Lade RSS-Feed von URL
+│   │   ├── Parse alle Episode-Einträge
+│   │   ├── Filtere neue Episodes (nicht älter als 30 Tage)
+│   │   ├── Duplikat-Check (schon in Datenbank?)
+│   │   └── Speichere neue Episodes
+│   └── Logge Erfolge und Fehler
+│
+└── Error-Handler
+    ├── Zähle Fehler pro Feed (max. 3 Versuche)
+    └── Sende User-Email bei 3 aufeinanderfolgenden Fehlern
+```
+
+**Keine User-sichtbare UI** - Läuft komplett im Hintergrund!
+
+### Daten-Model
+
+**Episode hat:**
+- Eindeutige Episode-ID (GUID aus RSS-Feed)
+- Episode-Titel
+- Audio-Datei URL (zum MP3/M4A-File)
+- Veröffentlichungs-Datum
+- Dauer (optional, in Sekunden)
+- Beschreibung (optional)
+- Status ("wartet auf Transkription", "fertig", etc.)
+- Zugehörigkeit zu Podcast-Abo
+
+**Gespeichert in:** Supabase Datenbank (Tabelle: `episodes`)
+
+**Error-Log hat:**
+- Feed-URL die fehlgeschlagen ist
+- Fehler-Nachricht
+- Zeitstempel
+- Zugehörigkeit zu Podcast-Abo
+
+**Gespeichert in:** Supabase Datenbank (Tabelle: `feed_check_logs`)
+
+### Tech-Entscheidungen
+
+**Warum stündlicher Cronjob?**
+- Balance zwischen Aktualität und Server-Last
+- Podcasts erscheinen selten häufiger als stündlich
+- Vercel erlaubt kostenlose Cron Jobs (jede Stunde)
+
+**Warum 30-Tage Filter?**
+- Verhindert Transkription von hunderten alter Episodes
+- Neu abonnierte Podcasts haben oft 100+ alte Episodes im Feed
+- Reduziert Kosten (Whisper API kostet pro Minute Audio)
+- 30 Tage = ~4-8 neue Episodes pro Podcast (realistisch)
+
+**Warum GUID als Duplikat-Check?**
+- GUID ist eindeutige Episode-ID im RSS-Standard
+- Verlässlicher als Titel-Vergleich (Titel können sich ändern)
+- RSS-Standard garantiert GUID-Einzigartigkeit
+
+**Warum 3 Fehler-Versuche?**
+- Temporäre Server-Ausfälle sollten nicht sofort User benachrichtigen
+- Nach 3 Stunden (3 aufeinanderfolgende Checks) ist es wahrscheinlich ein echtes Problem
+- User wird informiert und kann Feed-URL prüfen
+
+**Warum nur neue Episodes speichern (nicht alle)?**
+- Spart Speicherplatz
+- User interessieren sich nur für neue Inhalte
+- Alte Episodes sind nicht mehr relevant
+
+**Warum Vercel Cron Jobs?**
+- Bereits in Next.js integriert (keine zusätzliche Infrastruktur)
+- Kostenlos im Hobby-Plan
+- Einfaches Setup (nur JSON-Konfiguration)
+
+### Dependencies
+
+**Benötigte Packages:**
+- `rss-parser` (gleiche Library wie PROJ-2)
+- Vercel Cron Jobs (keine Installation nötig, Teil von Next.js Deployment)
+
+**Backend-Logik:**
+- API Route für Cronjob (`/api/cron/check-new-episodes`)
+- Supabase Client für Datenbank-Zugriff
+
+### System-Workflow
+
+**Jede Stunde passiert:**
+
+1. **Cronjob startet** (triggert API Route)
+
+2. **Für jeden abonnierten Podcast:**
+   - Lade RSS-Feed von gespeicherter URL
+   - Parse alle Episode-Einträge (XML → JavaScript-Objekt)
+   - Filtere nur Episodes der letzten 30 Tage
+   - Prüfe: Ist Episode schon in Datenbank? (GUID-Check)
+   - Falls neu: Speichere Episode mit Status "pending_transcription"
+
+3. **Error-Handling:**
+   - Feed nicht erreichbar → Log Error, weiter mit nächstem Feed
+   - Feed invalid → Log Error, weiter mit nächstem Feed
+   - Nach 3 aufeinanderfolgenden Fehlern → Email an User
+
+4. **Cronjob endet** (bis nächste Stunde)
+
+**User merkt nichts davon** - läuft komplett im Hintergrund!
+
+### Backend-API
+
+**Endpoint:**
+- `GET /api/cron/check-new-episodes` (von Vercel Cron ausgelöst)
+
+**Sicherheit:**
+- Nur von Vercel Cron aufrufbar (Secret-Header-Check)
+- User können diesen Endpoint NICHT direkt aufrufen
+
+### Vercel Cron Konfiguration
+
+**In `vercel.json`:**
+```
+Zeitplan: Jede Stunde (z.B. 00:00, 01:00, 02:00, ...)
+Endpoint: /api/cron/check-new-episodes
+```
+
+**Keine zusätzliche Infrastruktur nötig** (Vercel handled alles)
+
+### User-Benachrichtigung
+
+**Email bei Fehler (nach 3 Versuchen):**
+- Betreff: "Podcast-Feed konnte nicht geladen werden"
+- Inhalt: Welcher Podcast, welcher Fehler, was User tun kann
+- Nur bei permanenten Fehlern (nicht bei temporären)
+
 ## Notizen für Entwickler
 - Vercel Cron Jobs sind ideal für MVP (kein externer Service nötig)
 - `rss-parser` ist sehr zuverlässig, aber parst manchmal `itunes:duration` nicht korrekt → Fallback-Logik implementieren

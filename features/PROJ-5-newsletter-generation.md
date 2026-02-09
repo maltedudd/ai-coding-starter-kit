@@ -279,6 +279,164 @@ Dein Podletter-Team
 - Custom Prompt Templates pro User
 - Speaker Diarisation (Sprecher-Labels im Transkript)
 
+## Tech-Design (Solution Architect)
+
+### System-Komponenten
+
+```
+Newsletter-Generator Worker (läuft kontinuierlich)
+├── Timer (alle 10 Minuten)
+│
+├── Newsletter-Pipeline
+│   ├── Hole Episodes mit Status "transcribed"
+│   ├── Für jede Episode:
+│   │   ├── Lese Transkript aus Datenbank
+│   │   ├── Sende an Claude KI mit Anweisung
+│   │   │   └── "Erstelle Summary: Intro + Bullet Points + Key Takeaways"
+│   │   ├── Erhalte strukturierte Zusammenfassung
+│   │   ├── Parse Markdown (Intro, Bullets, Takeaways trennen)
+│   │   └── Speichere Newsletter-Content
+│   └── Aktualisiere Status ("generating_newsletter" → "newsletter_ready")
+│
+└── Error-Handler
+    ├── Bei Fehlern → Status "newsletter_failed"
+    └── User-Email bei permanenten Fehlern
+```
+
+**Keine User-sichtbare UI** - Läuft komplett im Hintergrund!
+
+### Daten-Model
+
+**Newsletter-Content hat:**
+- Intro-Text (2-3 Sätze Überblick)
+- Bullet Points (Liste mit 5-10 wichtigen Inhalten)
+- Key Takeaways (Liste mit 3-5 Top-Highlights)
+- Zugehörigkeit zu Episode
+
+**Gespeichert in:** Supabase Datenbank (Tabelle: `episode_newsletters`)
+
+**Episode-Status erweitert:**
+- "transcribed" → Transkript fertig, Newsletter-Erstellung steht an
+- "generating_newsletter" → Newsletter wird gerade erstellt
+- "newsletter_ready" → Newsletter fertig, bereit für Email-Versand
+- "newsletter_failed" → Erstellung fehlgeschlagen
+
+### Tech-Entscheidungen
+
+**Warum Claude (Anthropic)?**
+- Beste KI für lange Texte (200.000 Zeichen Context)
+- Sehr gut in Zusammenfassungen (besser als GPT-4)
+- Versteht Podcast-Inhalte ausgezeichnet
+- Liefert strukturiertes Markdown (leicht zu parsen)
+
+**Warum Intro + Bullet Points + Key Takeaways?**
+- Lesefreundliches Format (User überfliegen Newsletter schnell)
+- Intro = Kontext (worum geht's?)
+- Bullet Points = Details (was wird besprochen?)
+- Key Takeaways = Highlights (was sind die wichtigsten Punkte?)
+
+**Warum Markdown-Format?**
+- Claude gibt natürlich Markdown aus
+- Einfach zu parsen (Überschriften, Listen trennen)
+- Kann später in HTML konvertiert werden (für Email)
+
+**Warum Worker-Prozess?**
+- Newsletter-Generierung dauert 10-30 Sekunden
+- Kann nicht in Web-Request laufen
+- Muss im Hintergrund arbeiten
+
+**Warum sequentielle Verarbeitung?**
+- Claude API hat Rate Limits
+- Besser nacheinander verarbeiten als parallel
+- Verhindert Quota-Fehler
+
+### Dependencies
+
+**Benötigte Packages:**
+- `@anthropic-ai/sdk` (offizielles Anthropic SDK)
+- Keine Markdown-Parser nötig (einfaches String-Splitting reicht)
+
+**Infrastruktur:**
+- Worker-Service (kann gleicher Worker sein wie PROJ-4)
+- ODER: Vercel Cronjob (alle 10 Min)
+
+### System-Workflow
+
+**Alle 10 Minuten:**
+
+1. **Worker prüft Datenbank**
+   - Gibt es Episodes mit Status "transcribed"?
+
+2. **Für jede gefundene Episode:**
+   - Setze Status → "generating_newsletter"
+   - Hole Podcast-Titel, Episode-Titel, Transkript
+
+3. **Sende an Claude:**
+   - Prompt: "Du bist Newsletter-Autor. Erstelle Summary für Podcast X, Episode Y aus diesem Transkript: [...]"
+   - Claude antwortet mit strukturiertem Markdown
+
+4. **Parse Claude-Antwort:**
+   - Extrahiere Intro (Text unter "## Intro")
+   - Extrahiere Bullet Points (Liste unter "## Inhalte")
+   - Extrahiere Key Takeaways (Liste unter "## Key Takeaways")
+
+5. **Speichere Newsletter:**
+   - Schreibe Intro, Bullets, Takeaways in Datenbank
+   - Setze Status → "newsletter_ready"
+
+6. **Bei Fehler:**
+   - Claude API Error (Rate Limit) → Retry später
+   - Transkript zu lang → Kürze auf erste 150k Zeichen, dann retry
+   - Permanenter Fehler → Status "newsletter_failed", User-Email
+
+**User merkt nichts** - Newsletter wird später per Email zugestellt!
+
+### Claude API Prompt
+
+**Was Claude bekommt:**
+- Podcast-Titel: "Tech Talk Daily"
+- Episode-Titel: "KI in der Medizin"
+- Transkript: [Vollständiger Text, 5000+ Wörter]
+
+**Anweisung an Claude:**
+"Erstelle eine Zusammenfassung mit folgender Struktur:
+- Intro (2-3 Sätze)
+- 5-10 Bullet Points (wichtigste Themen)
+- 3-5 Key Takeaways (Top-Highlights)"
+
+**Claude antwortet mit:**
+```
+## Intro
+Diese Episode behandelt KI-Einsatz in Krankenhäusern...
+
+## Inhalte
+- KI-Diagnose-Tools verbessern Genauigkeit um 30%
+- Datenschutz-Bedenken bei Patientendaten
+- ...
+
+## Key Takeaways
+- KI ersetzt keine Ärzte, unterstützt sie
+- ...
+```
+
+### Kosten & Performance
+
+**Anthropic Claude Kosten:**
+- ~$3 pro 1 Million Input-Zeichen
+- ~$15 pro 1 Million Output-Zeichen
+- 30-Min-Podcast (~6000 Wörter Input + 500 Wörter Output) = ~$0.03
+
+**Geschwindigkeit:**
+- Newsletter-Generierung: 10-30 Sekunden pro Episode
+- Rate Limit: 50 Requests/Minute
+
+### User-Benachrichtigung
+
+**Email bei Fehler (permanent):**
+- Betreff: "Newsletter konnte nicht erstellt werden"
+- Inhalt: Welche Episode, welcher Fehler
+- User kann Support kontaktieren
+
 ## Notizen für Entwickler
 - Claude ist sehr gut mit langen Texten (200k Context), perfekt für Podcast-Transkripte
 - Markdown-Parsing ist wichtig: Claude gibt strukturiertes Markdown zurück, muss in DB-Format konvertiert werden
