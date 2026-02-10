@@ -36,7 +36,8 @@ export default function LoginPage() {
         } else if (error.message.includes('Email not confirmed')) {
           setError('Bitte bestätige zuerst deine Email-Adresse')
         } else {
-          setError('Anmeldung fehlgeschlagen. Bitte versuche es erneut.')
+          console.error('Supabase auth error:', error.message, error)
+          setError(`Anmeldung fehlgeschlagen: ${error.message}`)
         }
         setLoading(false)
         return
