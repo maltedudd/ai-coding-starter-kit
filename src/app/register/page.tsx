@@ -111,7 +111,7 @@ export default function RegisterPage() {
         <CardHeader className="space-y-3 text-center">
           <CardTitle className="text-3xl font-bold">Account erstellen</CardTitle>
           <CardDescription className="text-base">
-            Erstelle deinen Podletter-Account und erhalte täglich Newsletter zu deinen Lieblings-Podcasts
+            Erstelle deinen Castletter-Account und erhalte täglich Newsletter zu deinen Lieblings-Podcasts
           </CardDescription>
         </CardHeader>
         <CardContent>

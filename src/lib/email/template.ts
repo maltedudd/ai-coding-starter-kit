@@ -49,7 +49,7 @@ export function generateEmailHTML(
     <!-- Header -->
     <tr>
       <td style="padding: 40px 30px 20px; text-align: center; background-color: ${COLORS.primary};">
-        <h1 style="margin: 0; color: ${COLORS.bg}; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Podletter</h1>
+        <h1 style="margin: 0; color: ${COLORS.bg}; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Castletter</h1>
         <p style="margin: 8px 0 0; color: ${COLORS.muted}; font-size: 14px;">Deine täglichen Podcast-Highlights</p>
       </td>
     </tr>

@@ -10,7 +10,7 @@ export default function Home() {
           {/* Logo/Brand */}
           <div className="space-y-4">
             <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight">
-              Podletter
+              Castletter
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
               Erhalte täglich personalisierte Newsletter zu deinen Lieblings-Podcasts
@@ -62,7 +62,7 @@ export default function Home() {
       <footer className="border-t py-8">
         <div className="max-w-7xl mx-auto container-spacing">
           <p className="text-center text-sm text-muted-foreground">
-            © 2026 Podletter. Bleib auf dem Laufenden mit deinen Lieblings-Podcasts.
+            © 2026 Castletter. Bleib auf dem Laufenden mit deinen Lieblings-Podcasts.
           </p>
         </div>
       </footer>

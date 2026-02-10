@@ -77,7 +77,7 @@ export default function DashboardPage() {
         {/* Welcome Message */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Willkommen bei Podletter!</CardTitle>
+            <CardTitle className="text-2xl">Willkommen bei Castletter!</CardTitle>
             <CardDescription className="text-base">
               Erhalte täglich personalisierte Newsletter zu deinen Lieblings-Podcasts
             </CardDescription>

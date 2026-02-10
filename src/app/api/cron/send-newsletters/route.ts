@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { generateEmailHTML, generateEmailPlainText } from '@/lib/email/template'
 
 const MAX_USERS_PER_RUN = 100
-const FROM_EMAIL = process.env.FROM_EMAIL || 'Podletter <newsletter@podletter.app>'
+const FROM_EMAIL = process.env.FROM_EMAIL || 'Castletter <newsletter@castletter.app>'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 export async function GET(request: NextRequest) {
