@@ -9,6 +9,10 @@ interface NewsletterItem {
   intro: string
   bulletPoints: string[]
   keyTakeaways: string[]
+  actionItems: string[]
+  quotes: string[]
+  speakers: string[]
+  reflection: string | null
   audioUrl: string
 }
 
@@ -79,15 +83,26 @@ export function generateEmailHTML(
 </html>`
 }
 
+function generateBulletList(items: string[], color: string): string {
+  return items
+    .map((item) => `<li style="margin-bottom: 6px; color: ${COLORS.primary}; font-size: 14px; line-height: 1.5;">${escapeHtml(item)}</li>`)
+    .join('')
+}
+
+function generateSection(title: string, items: string[], titleColor: string): string {
+  if (!items || items.length === 0) return ''
+  return `
+          <tr>
+            <td style="padding: 10px 20px;">
+              <h3 style="margin: 0 0 8px; color: ${titleColor}; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">${escapeHtml(title)}</h3>
+              <ul style="margin: 0; padding-left: 20px;">
+                ${generateBulletList(items, COLORS.primary)}
+              </ul>
+            </td>
+          </tr>`
+}
+
 function generateEpisodeBlock(item: NewsletterItem): string {
-  const bulletPointsHTML = item.bulletPoints
-    .map((bp) => `<li style="margin-bottom: 6px; color: ${COLORS.primary}; font-size: 14px; line-height: 1.5;">${escapeHtml(bp)}</li>`)
-    .join('')
-
-  const keyTakeawaysHTML = item.keyTakeaways
-    .map((kt) => `<li style="margin-bottom: 6px; color: ${COLORS.primary}; font-size: 14px; line-height: 1.5; font-weight: 500;">${escapeHtml(kt)}</li>`)
-    .join('')
-
   return `
     <tr>
       <td style="padding: 20px 30px;">
@@ -100,32 +115,25 @@ function generateEpisodeBlock(item: NewsletterItem): string {
             </td>
           </tr>
 
-          <!-- Intro -->
+          <!-- Zusammenfassung -->
           <tr>
             <td style="padding: 20px 20px 10px;">
               <p style="margin: 0; color: ${COLORS.primary}; font-size: 15px; line-height: 1.6;">${escapeHtml(item.intro)}</p>
             </td>
           </tr>
 
-          ${bulletPointsHTML ? `
-          <!-- Bullet Points -->
-          <tr>
-            <td style="padding: 10px 20px;">
-              <h3 style="margin: 0 0 8px; color: ${COLORS.secondary}; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Inhalte</h3>
-              <ul style="margin: 0; padding-left: 20px;">
-                ${bulletPointsHTML}
-              </ul>
-            </td>
-          </tr>` : ''}
+          ${generateSection('Hauptthemen', item.bulletPoints, COLORS.secondary)}
+          ${generateSection('Wichtige Aussagen', item.keyTakeaways, COLORS.secondary)}
+          ${generateSection('Tipps & Methoden', item.actionItems, COLORS.accent)}
+          ${generateSection('Zitate & Begriffe', item.quotes, COLORS.accent)}
+          ${generateSection('Wer sagt was', item.speakers, COLORS.secondary)}
 
-          ${keyTakeawaysHTML ? `
-          <!-- Key Takeaways -->
+          ${item.reflection ? `
+          <!-- Einordnung -->
           <tr>
             <td style="padding: 10px 20px;">
-              <h3 style="margin: 0 0 8px; color: ${COLORS.accent}; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Key Takeaways</h3>
-              <ul style="margin: 0; padding-left: 20px;">
-                ${keyTakeawaysHTML}
-              </ul>
+              <h3 style="margin: 0 0 8px; color: ${COLORS.secondary}; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Einordnung</h3>
+              <p style="margin: 0; color: ${COLORS.textMuted}; font-size: 14px; line-height: 1.5; font-style: italic;">${escapeHtml(item.reflection)}</p>
             </td>
           </tr>` : ''}
 
@@ -133,7 +141,7 @@ function generateEpisodeBlock(item: NewsletterItem): string {
           <tr>
             <td style="padding: 15px 20px 20px;">
               <a href="${escapeHtml(item.audioUrl)}" style="display: inline-block; background-color: ${COLORS.secondary}; color: ${COLORS.bg}; padding: 10px 24px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">
-                &#9654; Höre die Episode
+                &#9654; Episode anhören
               </a>
             </td>
           </tr>
@@ -148,24 +156,54 @@ export function generateEmailPlainText(
   settingsUrl: string
 ): string {
   const blocks = newsletters.map((item) => {
-    const bullets = item.bulletPoints.map((bp) => `  • ${bp}`).join('\n')
-    const takeaways = item.keyTakeaways.map((kt) => `  ★ ${kt}`).join('\n')
+    const sections: string[] = []
 
-    return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${item.podcastTitle}
-${item.episodeTitle}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    sections.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+    sections.push(`${item.podcastTitle}`)
+    sections.push(`${item.episodeTitle}`)
+    sections.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+    sections.push('')
+    sections.push(item.intro)
 
-${item.intro}
+    if (item.bulletPoints.length > 0) {
+      sections.push('')
+      sections.push('HAUPTTHEMEN:')
+      sections.push(item.bulletPoints.map((bp) => `  • ${bp}`).join('\n'))
+    }
 
-INHALTE:
-${bullets}
+    if (item.keyTakeaways.length > 0) {
+      sections.push('')
+      sections.push('WICHTIGE AUSSAGEN:')
+      sections.push(item.keyTakeaways.map((kt) => `  ★ ${kt}`).join('\n'))
+    }
 
-KEY TAKEAWAYS:
-${takeaways}
+    if (item.actionItems.length > 0) {
+      sections.push('')
+      sections.push('TIPPS & METHODEN:')
+      sections.push(item.actionItems.map((ai) => `  → ${ai}`).join('\n'))
+    }
 
-→ Höre die Episode: ${item.audioUrl}
-`
+    if (item.quotes.length > 0) {
+      sections.push('')
+      sections.push('ZITATE & BEGRIFFE:')
+      sections.push(item.quotes.map((q) => `  „${q}"`).join('\n'))
+    }
+
+    if (item.speakers.length > 0) {
+      sections.push('')
+      sections.push('WER SAGT WAS:')
+      sections.push(item.speakers.map((s) => `  • ${s}`).join('\n'))
+    }
+
+    if (item.reflection) {
+      sections.push('')
+      sections.push(`EINORDNUNG: ${item.reflection}`)
+    }
+
+    sections.push('')
+    sections.push(`→ Episode anhören: ${item.audioUrl}`)
+
+    return sections.join('\n')
   })
 
   return `Deine neuen Podcast-Updates
@@ -174,7 +212,7 @@ ${takeaways}
 Hallo,
 hier sind deine neuen Podcast-Zusammenfassungen:
 
-${blocks.join('\n')}
+${blocks.join('\n\n')}
 ---
 Einstellungen ändern: ${settingsUrl}
 `

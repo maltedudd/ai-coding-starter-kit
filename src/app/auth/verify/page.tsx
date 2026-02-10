@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -13,25 +13,30 @@ export default function VerifyEmailPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null)
+
+  function getSupabase() {
+    if (!supabaseRef.current) {
+      supabaseRef.current = createClient()
+    }
+    return supabaseRef.current
+  }
 
   useEffect(() => {
+    const supabase = getSupabase()
     const verifyEmail = async () => {
       try {
-        // Check if user is already verified and logged in
         const { data: { user } } = await supabase.auth.getUser()
 
         if (user?.email_confirmed_at) {
           setSuccess(true)
           setVerifying(false)
-          // Redirect to settings after 2 seconds
           setTimeout(() => {
             router.push('/settings')
           }, 2000)
           return
         }
 
-        // If no user, wait for email confirmation
         setVerifying(false)
       } catch (err) {
         setError('Email-Bestätigung fehlgeschlagen')
@@ -40,16 +45,16 @@ export default function VerifyEmailPage() {
     }
 
     verifyEmail()
-  }, [router, supabase])
+  }, [router])
 
   // Listen for auth state changes
   useEffect(() => {
+    const supabase = getSupabase()
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_IN' && session?.user.email_confirmed_at) {
           setSuccess(true)
           setVerifying(false)
-          // Redirect to settings
           setTimeout(() => {
             router.push('/settings')
           }, 2000)
@@ -60,7 +65,7 @@ export default function VerifyEmailPage() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [router, supabase])
+  }, [router])
 
   if (verifying) {
     return (

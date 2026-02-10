@@ -99,11 +99,11 @@ async function generateNewsletter(
 
     const completion = await openrouter.chat.completions.create({
       model: process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-4',
-      max_tokens: 2000,
+      max_tokens: 3000,
       temperature: 0.7,
       messages: [{
         role: 'user',
-        content: `Du bist ein Newsletter-Autor. Erstelle eine strukturierte Zusammenfassung dieser Podcast-Episode.
+        content: `Du fasst eine Podcast-Episode zusammen. Dein Ziel ist, mir das Wissen aus dem Podcast so zu vermitteln, als hättest du ihn für mich gehört. Sprich mich direkt an, verwende klare Sprache, und verzichte auf Floskeln.
 
 Podcast: ${podcastTitle}
 Episode: ${episode.title}
@@ -113,16 +113,28 @@ ${transcript}
 
 Erstelle folgende Struktur (exakt diese Überschriften verwenden):
 
-## Intro
-[2-3 Sätze Überblick über das Thema der Episode]
+## Zusammenfassung
+[Prägnante Zusammenfassung in max. 5 Sätzen – für einen schnellen Überblick]
 
-## Inhalte
-- [5-10 Bullet Points mit den wichtigsten Themen und Aussagen]
+## Hauptthemen
+- [Die Hauptthemen des Podcasts als Stichpunkte]
 
-## Key Takeaways
-- [3-5 wichtigste Erkenntnisse/Highlights]
+## Wichtige Aussagen und Erkenntnisse
+- [Alle wichtigen Aussagen und Erkenntnisse – logisch gruppiert]
 
-Schreibe prägnant und leserfreundlich. Mindestens 3 Bullet Points pro Sektion.`
+## Tipps und Methoden
+- [Konkrete Tipps, Methoden, Handlungsempfehlungen oder Frameworks – falls vorhanden. Wenn nicht vorhanden, diese Sektion weglassen.]
+
+## Zitate und Begriffe
+- [Wichtige Zitate oder Begriffe, die im Podcast hervorgehoben wurden – falls vorhanden. Wenn nicht vorhanden, diese Sektion weglassen.]
+
+## Wer sagt was
+- [Falls der Podcast ein Interview ist: Wer sagt was? Rollen oder Perspektiven angeben. Falls kein Interview, diese Sektion weglassen.]
+
+## Einordnung
+[Kritische Reflexion oder Kontext – wie das Gesagte einzuordnen ist. 2-3 Sätze. Falls nicht sinnvoll, diese Sektion weglassen.]
+
+Mindestens 3 Bullet Points pro Sektion. Optionale Sektionen nur aufnehmen, wenn der Inhalt sie hergibt.`
       }]
     })
 
@@ -141,6 +153,10 @@ Schreibe prägnant und leserfreundlich. Mindestens 3 Bullet Points pro Sektion.`
         intro: parsed.intro,
         bullet_points: parsed.bulletPoints,
         key_takeaways: parsed.keyTakeaways,
+        action_items: parsed.actionItems,
+        quotes: parsed.quotes,
+        speakers: parsed.speakers,
+        reflection: parsed.reflection,
       })
 
     if (insertError) {
@@ -180,15 +196,18 @@ function parseNewsletter(markdown: string): {
   intro: string
   bulletPoints: string[]
   keyTakeaways: string[]
+  actionItems: string[]
+  quotes: string[]
+  speakers: string[]
+  reflection: string | null
 } {
-  const introMatch = markdown.match(/## Intro\n([\s\S]*?)(?=\n## )/i)
-  const bulletPointsMatch = markdown.match(/## Inhalte\n([\s\S]*?)(?=\n## )/i)
-  const keyTakeawaysMatch = markdown.match(/## Key Takeaways\n([\s\S]*?)$/i)
-
-  const intro = introMatch?.[1]?.trim() || markdown.split('\n').slice(0, 3).join(' ').trim()
-
-  const bulletPoints = extractBulletPoints(bulletPointsMatch?.[1] || '')
-  const keyTakeaways = extractBulletPoints(keyTakeawaysMatch?.[1] || '')
+  const intro = extractSection(markdown, 'Zusammenfassung')
+  const bulletPoints = extractBulletPoints(extractSectionRaw(markdown, 'Hauptthemen'))
+  const keyTakeaways = extractBulletPoints(extractSectionRaw(markdown, 'Wichtige Aussagen und Erkenntnisse'))
+  const actionItems = extractBulletPoints(extractSectionRaw(markdown, 'Tipps und Methoden'))
+  const quotes = extractBulletPoints(extractSectionRaw(markdown, 'Zitate und Begriffe'))
+  const speakers = extractBulletPoints(extractSectionRaw(markdown, 'Wer sagt was'))
+  const reflection = extractSection(markdown, 'Einordnung') || null
 
   // Fallback: if parsing failed, use the whole response as intro
   if (!intro && bulletPoints.length === 0 && keyTakeaways.length === 0) {
@@ -196,10 +215,30 @@ function parseNewsletter(markdown: string): {
       intro: markdown.trim(),
       bulletPoints: [],
       keyTakeaways: [],
+      actionItems: [],
+      quotes: [],
+      speakers: [],
+      reflection: null,
     }
   }
 
-  return { intro, bulletPoints, keyTakeaways }
+  return { intro, bulletPoints, keyTakeaways, actionItems, quotes, speakers, reflection }
+}
+
+/** Extract raw text of a markdown section (between ## heading and next ## or end) */
+function extractSectionRaw(markdown: string, heading: string): string {
+  const regex = new RegExp(`## ${heading}\\n([\\s\\S]*?)(?=\\n## |$)`, 'i')
+  return regex.exec(markdown)?.[1] || ''
+}
+
+/** Extract a section as plain text (for non-bullet sections like Zusammenfassung) */
+function extractSection(markdown: string, heading: string): string {
+  return extractSectionRaw(markdown, heading)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('- ') && !line.startsWith('* '))
+    .join(' ')
+    .trim()
 }
 
 /** Extract bullet points from a markdown section */

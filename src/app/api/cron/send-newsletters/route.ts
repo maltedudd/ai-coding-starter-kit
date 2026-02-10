@@ -104,7 +104,7 @@ async function sendUserNewsletter(
     .from('episodes')
     .select(`
       id, title, audio_url, subscription_id,
-      episode_newsletters!inner(intro, bullet_points, key_takeaways)
+      episode_newsletters!inner(intro, bullet_points, key_takeaways, action_items, quotes, speakers, reflection)
     `)
     .eq('status', 'newsletter_ready')
     .in('subscription_id', subscriptionIds)
@@ -123,6 +123,10 @@ async function sendUserNewsletter(
       intro: newsletter?.intro || '',
       bulletPoints: (newsletter?.bullet_points || []) as string[],
       keyTakeaways: (newsletter?.key_takeaways || []) as string[],
+      actionItems: (newsletter?.action_items || []) as string[],
+      quotes: (newsletter?.quotes || []) as string[],
+      speakers: (newsletter?.speakers || []) as string[],
+      reflection: (newsletter?.reflection as string) || null,
       audioUrl: ep.audio_url,
     }
   })
