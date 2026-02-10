@@ -109,7 +109,7 @@ export default function SettingsPage() {
           newsletter_email: email,
           newsletter_delivery_hour: utcHour,
           updated_at: new Date().toISOString(),
-        })
+        }, { onConflict: 'user_id' })
 
       if (error) {
         console.error('Error saving settings:', error)
